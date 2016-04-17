@@ -18,10 +18,18 @@ const cv::Scalar SCALAR_RED = cv::Scalar(0.0, 0.0, 255.0);
 
 enum CAR_DIRECTION{BOTTOM_UP , TOP_DOWN};
 int direction = BOTTOM_UP;
-//��׷�ٵĳ�����Ŀ
+
+//±ª◊∑◊Ÿµƒ≥µµƒ ˝ƒø
 int intNumTrackedCar = 0;
 
-// function prototypes ////////////////////////////////////////////////////////////////////////////
+bool hasBeenSelected = false;
+bool isSelecting = false;
+//—°‘Òµƒ«¯”Ú
+cv::Rect selection;
+
+cv::Point origin;
+
+//∫Ø ˝
 void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std::vector<Blob> &currentFrameBlobs);
 void addBlobToExistingBlobs(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs, int &intIndex);
 void addNewBlob(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs);
@@ -30,22 +38,26 @@ bool checkIfBlobsCrossedTheLine(std::vector<Blob> &blobs, int &intHorizontalLine
 void drawBlobInfoOnImage(std::vector<Blob> &blobs, cv::Mat &imgFrame2Copy);
 void drawCarCountOnImage(int &carCount, cv::Mat &imgFrame2Copy);
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+static void onMouse(int event , int x , int y , int , void*);
+/************************************************************************/
+
 int main(void) {
 
     cv::VideoCapture capVideo;
 
-    cv::Mat imgFrame1;
-    cv::Mat imgFrame2;
-
+    cv::Mat imgFrame1 , imgFrame2 , imgFrame1Copy , imgFrame2Copy ,imgThresh , imgDifference;
+	cv::Mat showFrame;
     std::vector<Blob> blobs;
 
+	//crossingœﬂ
     cv::Point crossingLine[2];
-
+	int intHorizontalLinePosition;
+	int intVerticalLinePosition;
+	int preHor = 35;
     int carCount = 0;
 
     capVideo.open("CarsDrivingUnderBridge.mp4");
-	//����Ƶû�ɹ��򿪻���ֻ��һ֡ʱ���˳�
+	//µ± ”∆µ√ª≥…π¶¥Úø™ªÚ «÷ª”–“ª÷° ±£¨ÕÀ≥ˆ
     if (!capVideo.isOpened()) {
         std::cout << "error reading video file" << std::endl << std::endl;      
         return(0);
@@ -59,128 +71,127 @@ int main(void) {
     capVideo.read(imgFrame1);
     capVideo.read(imgFrame2);
 
-	//crossing��
-    int intHorizontalLinePosition = (int)round((double)imgFrame1.rows * 0.35);
-	int intVerticalLinePosition = 0;
-
-    crossingLine[0].x = intVerticalLinePosition;
-    crossingLine[0].y = intHorizontalLinePosition;
-
-    crossingLine[1].x = imgFrame1.cols - 1;
-    crossingLine[1].y = intHorizontalLinePosition;
-
     char chCheckForEscKey = 0;
 
     bool blnFirstFrame = true;
 
     int frameCount = 2;
 
+	namedWindow("CarTrack",cv::WINDOW_AUTOSIZE);
+	cv::setMouseCallback("CarTrack",onMouse,0);
+	cv::createTrackbar("Horizon","CarTrack",&preHor , 100 , 0);
     while (capVideo.isOpened() && chCheckForEscKey != 27) {
 /************************************************************************/
-/*							ǰ����ȡ                                    */
+/*							«∞æ∞Ã·»°                                    */
 /************************************************************************/
-        std::vector<Blob> currentFrameBlobs;
+		showFrame = imgFrame2.clone();
+		if(hasBeenSelected){
+			imgFrame1Copy = imgFrame1(selection);
+			imgFrame2Copy = showFrame(selection);
 
-        cv::Mat imgFrame1Copy = imgFrame1.clone();
-        cv::Mat imgFrame2Copy = imgFrame2.clone();
+			intHorizontalLinePosition = (int)round((double)selection.height * preHor / 100);
+			crossingLine[0].x = 0;
+			crossingLine[0].y = intHorizontalLinePosition;
 
-        cv::Mat imgDifference;
-        cv::Mat imgThresh;
-		//The function converts an input image from one color space to another
-		//point��http://docs.opencv.org/3.1.0/d7/d1b/group__imgproc__misc.html#ga397ae87e1288a81d2363b61574eb8cab
-        cv::cvtColor(imgFrame1Copy, imgFrame1Copy, CV_BGR2GRAY);
-        cv::cvtColor(imgFrame2Copy, imgFrame2Copy, CV_BGR2GRAY);
-		/*
-		http://docs.opencv.org/3.1.0/de/db2/laplace_8cpp-example.html#a13
-		*/
-        cv::GaussianBlur(imgFrame1Copy, imgFrame1Copy, cv::Size(5, 5), 0);
-        cv::GaussianBlur(imgFrame2Copy, imgFrame2Copy, cv::Size(5, 5), 0);
-		/*Calculates the per-element absolute difference between two arrays or between an array and a scalar*/
-        cv::absdiff(imgFrame1Copy, imgFrame2Copy, imgDifference);
-		/*Applies a fixed-level threshold to each array element
-		The function applies fixed-level thresholding to a single-channel array
-		*/
-        cv::threshold(imgDifference, imgThresh, 30, 255.0, CV_THRESH_BINARY);
-		//cv::adaptiveThreshold();
+			crossingLine[1].x = selection.width - 1;
+			crossingLine[1].y = intHorizontalLinePosition;
 
-		//��̬ѧ����
-        cv::Mat structuringElement3x3 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-        cv::Mat structuringElement5x5 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
-        cv::Mat structuringElement7x7 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
-        cv::Mat structuringElement15x15 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(15, 15));
+			std::vector<Blob> currentFrameBlobs;
+			//The function converts an input image from one color space to another
+			//point£∫http://docs.opencv.org/3.1.0/d7/d1b/group__imgproc__misc.html#ga397ae87e1288a81d2363b61574eb8cab
+			cv::cvtColor(imgFrame1Copy, imgFrame1Copy, CV_BGR2GRAY);
+			cv::cvtColor(imgFrame2Copy, imgFrame2Copy, CV_BGR2GRAY);
+			/*
+			http://docs.opencv.org/3.1.0/de/db2/laplace_8cpp-example.html#a13
+			*/
+			cv::GaussianBlur(imgFrame1Copy, imgFrame1Copy, cv::Size(5, 5), 0);
+			cv::GaussianBlur(imgFrame2Copy, imgFrame2Copy, cv::Size(5, 5), 0);
+			/*Calculates the per-element absolute difference between two arrays or between an array and a scalar*/
+			cv::absdiff(imgFrame1Copy, imgFrame2Copy, imgDifference);
+			/*Applies a fixed-level threshold to each array element
+			The function applies fixed-level thresholding to a single-channel array
+			*/
+			cv::threshold(imgDifference, imgThresh, 30, 255.0, CV_THRESH_BINARY);
+			//cv::adaptiveThreshold();
 
-        for (unsigned int i = 0; i < 2; i++) {
-            cv::dilate(imgThresh, imgThresh, structuringElement5x5);
-            cv::dilate(imgThresh, imgThresh, structuringElement5x5);
-            cv::erode(imgThresh, imgThresh, structuringElement5x5);
-        }
-/************************************************************************/
-/*								��ת��                                  */
-/************************************************************************/
-        cv::Mat imgThreshCopy = imgThresh.clone();
+			//–ŒÃ¨—ß¥¶¿Ì
+			cv::Mat structuringElement3x3 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+			cv::Mat structuringElement5x5 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+			cv::Mat structuringElement7x7 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
+			cv::Mat structuringElement15x15 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(15, 15));
 
-        std::vector<std::vector<cv::Point> > contours;
+			for (unsigned int i = 0; i < 2; i++) {
+				cv::dilate(imgThresh, imgThresh, structuringElement5x5);
+				cv::dilate(imgThresh, imgThresh, structuringElement5x5);
+				cv::erode(imgThresh, imgThresh, structuringElement5x5);
+			}
+	/************************************************************************/
+	/*								øÈ◊™ªØ                                  */
+	/************************************************************************/
+			//cv::Mat imgThreshCopy = imgThresh.clone();
 
-        cv::findContours(imgThreshCopy, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+			std::vector<std::vector<cv::Point> > contours;
 
+			cv::findContours(imgThresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-        std::vector<std::vector<cv::Point> > convexHulls(contours.size());
-		/*
-		http://docs.opencv.org/3.1.0/d7/d1d/tutorial_hull.html
-		*/
-        for (unsigned int i = 0; i < contours.size(); i++) {
-            cv::convexHull(contours[i], convexHulls[i]);
-        }
+			std::vector<std::vector<cv::Point> > convexHulls(contours.size());
+			/*
+			http://docs.opencv.org/3.1.0/d7/d1d/tutorial_hull.html
+			*/
+			for (unsigned int i = 0; i < contours.size(); i++) {
+				cv::convexHull(contours[i], convexHulls[i]);
+			}
 
-		/*http://docs.opencv.org/3.1.0/d7/d1d/tutorial_hull.html*/
-        for (auto &convexHull : convexHulls) {
-            Blob possibleBlob(convexHull);
+			/*http://docs.opencv.org/3.1.0/d7/d1d/tutorial_hull.html*/
+			for (auto &convexHull : convexHulls) {
+				Blob possibleBlob(convexHull);
 
-            if (possibleBlob.currentBoundingRect.area() > 400 &&
-                possibleBlob.dblCurrentAspectRatio > 0.2 &&
-                possibleBlob.dblCurrentAspectRatio < 4.0 &&
-                possibleBlob.currentBoundingRect.width > 30 &&
-                possibleBlob.currentBoundingRect.height > 30 &&
-                possibleBlob.dblCurrentDiagonalSize > 60.0 &&
-				possibleBlob.currentBoundingRect.y + 100> intHorizontalLinePosition &&
-                (cv::contourArea(possibleBlob.currentContour) / (double)possibleBlob.currentBoundingRect.area()) > 0.50) {
-                currentFrameBlobs.push_back(possibleBlob);
-            }
-        }
-/************************************************************************/
-/*								�����                                  */
-/************************************************************************/
+				if (possibleBlob.currentBoundingRect.area() > 400 &&
+					possibleBlob.dblCurrentAspectRatio > 0.2 &&
+					possibleBlob.dblCurrentAspectRatio < 4.0 &&
+					possibleBlob.currentBoundingRect.width > 30 &&
+					possibleBlob.currentBoundingRect.height > 30 &&
+					possibleBlob.dblCurrentDiagonalSize > 60.0 &&
+					possibleBlob.currentBoundingRect.y + 100> intHorizontalLinePosition &&
+					(cv::contourArea(possibleBlob.currentContour) / (double)possibleBlob.currentBoundingRect.area()) > 0.50) {
+					currentFrameBlobs.push_back(possibleBlob);
+				}
+			}
+	/************************************************************************/
+	/*								øÈº∆ ˝                                  */
+	/************************************************************************/
 
-        if (blnFirstFrame == true) {
-            for (auto &currentFrameBlob : currentFrameBlobs) {
-                blobs.push_back(currentFrameBlob);
-            }
-        } else {
-            matchCurrentFrameBlobsToExistingBlobs(blobs, currentFrameBlobs);
-        }
+			if (blnFirstFrame == true) {
+				for (auto &currentFrameBlob : currentFrameBlobs) {
+					blobs.push_back(currentFrameBlob);
+				}
+			} else {
+				matchCurrentFrameBlobsToExistingBlobs(blobs, currentFrameBlobs);
+			}
 
+			imgFrame2Copy = showFrame(selection);
+			//”√æÿ–ŒøÚ¿®≥ˆ≥µ¡æµƒ¬÷¿™
+			drawBlobInfoOnImage(blobs, imgFrame2Copy);
 
-        imgFrame2Copy = imgFrame2.clone();
-		//�þ��ο���������������
-        drawBlobInfoOnImage(blobs, imgFrame2Copy);
+			bool blnAtLeastOneBlobCrossedTheLine = checkIfBlobsCrossedTheLine(blobs, intHorizontalLinePosition, carCount);
+			//≥µ¡ææ≠π˝ ±£¨œﬂ—’…´±‰∫Ï;∆Ω ±Œ™¬Ã…´
+			if (blnAtLeastOneBlobCrossedTheLine == true) {
+				cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_RED, 2);
+			}
+			else {
+				cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_GREEN, 2);
+			}
+			//Ω´≥µ¡æº∆ ˝µƒ ˝ƒøœ‘ æ‘⁄ ”∆µ÷–
+			drawCarCountOnImage(carCount, showFrame);
 
-        bool blnAtLeastOneBlobCrossedTheLine = checkIfBlobsCrossedTheLine(blobs, intHorizontalLinePosition, carCount);
-		//��������ʱ������ɫ���;ƽʱΪ��ɫ
-        if (blnAtLeastOneBlobCrossedTheLine == true) {
-            cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_RED, 2);
-        }
-        else {
-            cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_GREEN, 2);
-        }
-		//��������������Ŀ��ʾ����Ƶ��
-        drawCarCountOnImage(carCount, imgFrame2Copy);
+			currentFrameBlobs.clear();
 
-        cv::imshow("imgFrame2Copy", imgFrame2Copy);
+			imgFrame1 = imgFrame2.clone();
+			blnFirstFrame = false;
+		}
 
-        currentFrameBlobs.clear();
-
-        imgFrame1 = imgFrame2.clone();
-
+		cv::rectangle(showFrame,selection,cv::Scalar(0,0,255) , 3);
+		cv::imshow("CarTrack", showFrame);
         if ((capVideo.get(CV_CAP_PROP_POS_FRAMES) + 1) < capVideo.get(CV_CAP_PROP_FRAME_COUNT)) {
             capVideo.read(imgFrame2);
         }
@@ -188,29 +199,23 @@ int main(void) {
             std::cout << "end of video\n";
             break;
         }
-
-        blnFirstFrame = false;
         frameCount++;
         chCheckForEscKey = cv::waitKey(1);
     }
-
-    if (chCheckForEscKey != 27) {
-        cv::waitKey(0);
-	}
 
     return(0);
 }
 
 /*----------------------------------------------------------------------*/
-/*						���ǻ������ķָ���								*/
-/*						  �����Ǻ�������								*/
+/*						Œ“ «ª™¿ˆ¿ˆµƒ∑÷∏Óœﬂ								*/
+/*						  “‘œ¬ «∫Ø ˝≤ø∑÷								*/
 /*----------------------------------------------------------------------*/
 
 /************************************************************************/
-/*			�˺����������ǵ�ǰframe�еĿ����Ѵ��ڵĿ����ƥ��			*/
-/*���������															*/
-/*vector<Blob> &existingBlobs���Ѵ��ڵĿ鼯��							*/
-/*vector<Blob> &currentFrameBlobs����ǰframe�Ŀ鼯��					*/
+/*			¥À∫Ø ˝µƒ◊˜”√ «µ±«∞frame÷–µƒøÈ”Î“—¥Ê‘⁄µƒøÈΩ¯––∆•≈‰			*/
+/* ‰»Î≤Œ ˝£∫															*/
+/*vector<Blob> &existingBlobs£∫“—¥Ê‘⁄µƒøÈºØ∫œ							*/
+/*vector<Blob> &currentFrameBlobs£∫µ±«∞frameµƒøÈºØ∫œ					*/
 /************************************************************************/
 void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std::vector<Blob> &currentFrameBlobs) {
 
@@ -225,7 +230,7 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
 
         int intIndexOfLeastDistance = 0;
         double dblLeastDistance = 100000.0;
-		//Ѱ������֪����ӽ��Ŀ飬�������±�
+		//—∞’“”Î“—÷™øÈ◊ÓΩ”Ω¸µƒøÈ£¨∑µªÿ∆‰œ¬±Í
         for (unsigned int i = 0; i < existingBlobs.size(); i++) {
 
 			if (existingBlobs[i].blnStillBeingTracked == true) {
@@ -246,7 +251,7 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
                 }
 			}
         }
-		//�����޸�dblCurrentDiagonalSize��ϵ����0.5���ҵľ���ֵ
+		//ø…“‘–ﬁ∏ƒdblCurrentDiagonalSizeµƒœµ ˝£¨0.5 «Œ“µƒæ≠—È÷µ
         if (dblLeastDistance < currentFrameBlob.dblCurrentDiagonalSize * 0.5) {
 			addBlobToExistingBlobs(currentFrameBlob, existingBlobs, intIndexOfLeastDistance);
         }
@@ -255,7 +260,7 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
         }
 
     }
-//��ȥһЩǰһ֡���ں�һ֡�����ڵĳ�����������ʧ�ĳ�
+//≥˝»•“ª–©«∞“ª÷°¥Ê‘⁄∫Û“ª÷°≤ª¥Ê‘⁄µƒ≥µ¡æ£¨º¥÷Ω•œ˚ ßµƒ≥µ
     for (auto &existingBlob : existingBlobs) {
 
         if (existingBlob.blnCurrentMatchFoundOrNewBlob == false) {
@@ -271,21 +276,21 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
 
 }
 /************************************************************************/
-/*                           �����Ѵ��ڵĿ�                             */
-/*��ԭ���е�currentContour��currentBoundingRect�������޸�				*/
-/*ͬʱ��vector<point>centerPositions����һ���µ�centerPositions			*/
+/*                           ∏¸–¬“—¥Ê‘⁄µƒøÈ                             */
+/*∂‘‘≠øÈ÷–µƒcurrentContour°¢currentBoundingRectµ» Ù–‘–ﬁ∏ƒ				*/
+/*Õ¨ ±∏¯vector<point>centerPositionsÃÌº”“ª∏ˆ–¬µƒcenterPositions			*/
 /************************************************************************/
 void addBlobToExistingBlobs(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs, int &intIndex) {
-	//����Ҫ��⳵�ķ���ѡ���޸�existingBlobs
+	//∏˘æ›“™ºÏ≤‚≥µµƒ∑ΩœÚ—°‘Ò–ﬁ∏ƒexistingBlobs
 	if (direction == BOTTOM_UP && currentFrameBlob.currentBoundingRect.y< existingBlobs[intIndex].currentBoundingRect.y)
 	{
-		//��׽�����³�����
+		//≤∂◊ΩµΩµƒ–¬≥µ¡æ£¨
 		if(existingBlobs[intIndex].centerPositions.size() == 2 && 
 			existingBlobs[intIndex].blnStillBeingTracked == true && 
 			existingBlobs[intIndex].blnHaveBeenCrossingLine == false){
 			existingBlobs[intIndex].intNumOfTrackedCar = ++ intNumTrackedCar;
 		}
-		//�޸�blob�е�һЩֵ
+		//–ﬁ∏ƒblob÷–µƒ“ª–©÷µ
 		existingBlobs[intIndex].currentContour = currentFrameBlob.currentContour;
 		existingBlobs[intIndex].currentBoundingRect = currentFrameBlob.currentBoundingRect;
 
@@ -301,7 +306,7 @@ void addBlobToExistingBlobs(Blob &currentFrameBlob, std::vector<Blob> &existingB
 }
 
 /************************************************************************/
-/*								�����¿�								*/
+/*								ÃÌº”–¬øÈ								*/
 /************************************************************************/
 void addNewBlob(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs) {
 
@@ -311,7 +316,7 @@ void addNewBlob(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs) {
 }
 
 /************************************************************************/
-/*							�����ľ���                                */
+/*							¡Ωµ„º‰µƒæ‡¿Î                                */
 /************************************************************************/
 double distanceBetweenPoints(cv::Point point1, cv::Point point2) {
     
@@ -322,8 +327,8 @@ double distanceBetweenPoints(cv::Point point1, cv::Point point2) {
 }
 
 /************************************************************************/
-/*						�ж��Ƿ񾭹�������������                        */
-/*	������centerPositions�ֱ���ˮƽ�߽��бȽϣ�һ��һС��˵��ǡ�þ���	*/
+/*						≈–∂œ «∑Òæ≠π˝À˘ª≠µƒƒ«Ãıœﬂ                        */
+/*	Ω´¡Ω∏ˆcenterPositions∑÷±”ÎÀÆ∆ΩœﬂΩ¯––±»Ωœ£¨“ª¥Û“ª–°‘ÚÀµ√˜«°∫√æ≠π˝	*/
 /************************************************************************/
 bool checkIfBlobsCrossedTheLine(std::vector<Blob> &blobs, int &intHorizontalLinePosition, int &carCount) {
     bool blnAtLeastOneBlobCrossedTheLine = false;
@@ -338,7 +343,7 @@ bool checkIfBlobsCrossedTheLine(std::vector<Blob> &blobs, int &intHorizontalLine
 				blobs[i].centerPositions[currFrameIndex].y <= intHorizontalLinePosition){
                 carCount++;
                 blnAtLeastOneBlobCrossedTheLine = true;
-				//ײ��֮��Ͳ��ٲ�׽
+				//◊≤œﬂ÷Æ∫ÛæÕ≤ª‘Ÿ≤∂◊Ω
 				blobs[i].blnHaveBeenCrossingLine = true;
             }
         }
@@ -349,10 +354,10 @@ bool checkIfBlobsCrossedTheLine(std::vector<Blob> &blobs, int &intHorizontalLine
 }
 
 /************************************************************************/
-/*								���ƾ��ο�                              */
+/*								ªÊ÷∆æÿ–ŒøÚ                              */
 /************************************************************************/
 void drawBlobInfoOnImage(std::vector<Blob> &blobs, cv::Mat &imgFrame2Copy) {
-	//������ʾ��׷�ٹ��ĳ����ĸ���
+	//”√”⁄œ‘ æ±ª◊∑◊Ÿπ˝µƒ≥µ¡æµƒ∏ˆ ˝
     for (unsigned int i = 0; i < blobs.size(); i++) {
 
 		if (blobs[i].blnStillBeingTracked == true && blobs[i].blnHaveBeenCrossingLine == false) {
@@ -370,7 +375,7 @@ void drawBlobInfoOnImage(std::vector<Blob> &blobs, cv::Mat &imgFrame2Copy) {
 }
 
 /************************************************************************/
-/*							���Ӿ���������Ŀ                            */
+/*							ÃÌº”æ≠π˝≥µµƒ ˝ƒø                            */
 /************************************************************************/
 void drawCarCountOnImage(int &carCount, cv::Mat &imgFrame2Copy) {
 
@@ -387,5 +392,28 @@ void drawCarCountOnImage(int &carCount, cv::Mat &imgFrame2Copy) {
 
     cv::putText(imgFrame2Copy, std::to_string(carCount), 
 		ptTextBottomLeftPosition, intFontFace, dblFontScale, SCALAR_GREEN, intFontThickness);
+}
 
+static void onMouse(int event , int x , int y , int , void*){
+	if (isSelecting){
+		//∏¸∏ƒselectionµƒ÷µ
+		selection.x = MIN(x , origin.x);
+		selection.y = MIN(y , origin.y);
+		selection.width = std::abs(x - origin.x);
+		selection.height = std::abs(y - origin.y);
+	}
+	switch(event){
+	case cv::EVENT_LBUTTONDOWN:
+		isSelecting = true;
+		hasBeenSelected = false;
+		origin = cv::Point(x,y);
+		selection = cv::Rect(x , y , 0 , 0);
+		break;
+	case cv::EVENT_LBUTTONUP:
+		isSelecting = false;
+		hasBeenSelected = true;
+		break;
+	default:
+		break;
+	}	
 }
